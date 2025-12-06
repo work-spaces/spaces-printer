@@ -16,7 +16,6 @@ mod null_term;
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Display, Default, Serialize, Deserialize,
 )]
-
 pub enum Level {
     Trace,
     Debug,
@@ -257,7 +256,7 @@ impl MultiProgressBar {
             .start_process(command, &options)
             .context(format!("Failed to start process {command}"))?;
         let result = monitor_process(command, child_process, self, &options)
-            .context(format!("{command} failed"))?;
+            .context(format!("Command `{command}` failed to execute"))?;
         Ok(result)
     }
 }
@@ -750,7 +749,7 @@ impl Printer {
         let mut multi_progress = MultiProgress::new(section.printer);
         let mut progress_bar = multi_progress.add_progress("progress", None, None);
         let result = monitor_process(command, child_process, &mut progress_bar, &options)
-            .context(format!("{command} failed"))?;
+            .context(format!("Command `{command}` failed to execute"))?;
 
         Ok(result)
     }
@@ -863,12 +862,90 @@ fn monitor_process(
         Ok(())
     };
 
-    let exit_status;
-
     let mut stderr_content = String::new();
     let mut stdout_content = String::new();
 
-    let mut output_file = if let Some(log_path) = options.log_file_path.as_ref() {
+    let mut output_file = create_log_file(command, options).context("Failed to create log file")?;
+
+    let exit_status;
+
+    loop {
+        if let Some(status) = child_process
+            .try_wait()
+            .context("while waiting for child process")?
+        {
+            exit_status = Some(status);
+            break;
+        }
+
+        let stdout_content = if options.is_return_stdout {
+            Some(&mut stdout_content)
+        } else {
+            None
+        };
+
+        handle_stdout(progress_bar, output_file.as_mut(), stdout_content)
+            .context("failed to handle stdout")?;
+        handle_stderr(progress_bar, output_file.as_mut(), &mut stderr_content)
+            .context("failed to handle stderr")?;
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        progress_bar.increment_with_overflow(1);
+
+        let now = std::time::Instant::now();
+        if let Some(timeout) = options.timeout {
+            if now - start_time > timeout {
+                child_process.kill().context("Failed to kill process")?;
+            }
+        }
+    }
+
+    let _ = stdout_thread.join();
+    let _ = stderr_thread.join();
+
+    {
+        let stdout_content = if options.is_return_stdout {
+            Some(&mut stdout_content)
+        } else {
+            None
+        };
+
+        handle_stdout(progress_bar, output_file.as_mut(), stdout_content)
+            .context("while handling stdout")?;
+    }
+
+    handle_stderr(progress_bar, output_file.as_mut(), &mut stderr_content)
+        .context("while handling stderr")?;
+
+    if let Some(exit_status) = exit_status {
+        if !exit_status.success() {
+            let stderr_message = if output_file.is_some() {
+                String::new()
+            } else {
+                format!(": {stderr_content}")
+            };
+            if let Some(code) = exit_status.code() {
+                let exit_message = format!("Command `{command}` failed with exit code: {code}");
+                return Err(anyhow::anyhow!("{exit_message}{stderr_message}"));
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Command `{command}` failed with unknown exit code{stderr_message}"
+                ));
+            }
+        }
+    }
+
+    Ok(if options.is_return_stdout {
+        Some(stdout_content)
+    } else {
+        None
+    })
+}
+
+fn create_log_file(
+    command: &str,
+    options: &ExecuteOptions,
+) -> anyhow::Result<Option<std::fs::File>> {
+    if let Some(log_path) = options.log_file_path.as_ref() {
         let mut file = std::fs::File::create(log_path.as_ref())
             .context(format!("while creating {log_path}"))?;
 
@@ -910,74 +987,10 @@ fn monitor_process(
         file.write(format!("{log_header_serialized}{divider}\n").as_bytes())
             .context(format!("while writing {log_path}"))?;
 
-        Some(file)
+        Ok(Some(file))
     } else {
-        None
-    };
-
-    loop {
-        if let Ok(Some(status)) = child_process.try_wait() {
-            exit_status = Some(status);
-            break;
-        }
-
-        let stdout_content = if options.is_return_stdout {
-            Some(&mut stdout_content)
-        } else {
-            None
-        };
-
-        handle_stdout(progress_bar, output_file.as_mut(), stdout_content)
-            .context("failed to handle stdout")?;
-        handle_stderr(progress_bar, output_file.as_mut(), &mut stderr_content)
-            .context("failed to handle stderr")?;
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        progress_bar.increment_with_overflow(1);
-
-        let now = std::time::Instant::now();
-
-        if let Some(timeout) = options.timeout {
-            if now - start_time > timeout {
-                child_process.kill().context("Failed to kill process")?;
-            }
-        }
+        Ok(None)
     }
-
-    let _ = stdout_thread.join();
-    let _ = stderr_thread.join();
-
-    {
-        let stdout_content = if options.is_return_stdout {
-            Some(&mut stdout_content)
-        } else {
-            None
-        };
-
-        handle_stdout(progress_bar, output_file.as_mut(), stdout_content)
-            .context("while handling stdout")?;
-    }
-
-    handle_stderr(progress_bar, output_file.as_mut(), &mut stderr_content)
-        .context("while handling stderr")?;
-
-    if let Some(exit_status) = exit_status {
-        if !exit_status.success() {
-            if let Some(code) = exit_status.code() {
-                let exit_message = format!("Command failed with exit code: {code}");
-                return Err(anyhow::anyhow!("{exit_message} : {stderr_content}"));
-            } else {
-                return Err(anyhow::anyhow!(
-                    "Command failed with unknown exit code: {stderr_content}"
-                ));
-            }
-        }
-    }
-
-    Ok(if options.is_return_stdout {
-        Some(stdout_content)
-    } else {
-        None
-    })
 }
 
 #[cfg(test)]
