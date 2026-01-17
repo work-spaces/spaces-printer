@@ -193,6 +193,10 @@ impl MultiProgressBar {
         self.final_message = Some(self.construct_message(message).into());
     }
 
+    pub fn set_ending_message_none(&mut self) {
+        self.final_message = None;
+    }
+
     pub fn increment_with_overflow(&mut self, count: u64) {
         let progress_total = self.total();
         if let Some(progress) = self.progress.as_mut() {
