@@ -82,19 +82,18 @@ fn format_log(
 ) -> String {
     let timestamp: Arc<str> = if is_show_elapsed_time {
         let elapsed = std::time::Instant::now() - start_time;
-        format!("{:.3}:", elapsed.as_secs_f64()).into()
+        format!("[{:.3}]  ", elapsed.as_secs_f64()).into()
     } else {
         "".into()
     };
     let mut result = if verbosity == Level::Passthrough {
         format!("{timestamp}{message}")
     } else {
+        let message_level_string = verbosity.to_string().to_lowercase();
+        let message_level = message_level_string.if_supports_color(Stdout, |text| text.bold());
         format!(
-            "{timestamp}{}{}: {message}",
+            "::{message_level}::{timestamp}{}{message}",
             " ".repeat(indent),
-            verbosity
-                .to_string()
-                .if_supports_color(Stdout, |text| text.bold())
         )
     };
     while result.len() < max_width {
@@ -579,6 +578,12 @@ impl Printer {
             secrets: Vec::new(),
             redacted: "REDACTED".into(),
         }
+    }
+
+    pub fn raw(&mut self, message: &str) -> anyhow::Result<()> {
+        let _lock = self.lock.lock().unwrap();
+        write!(self.writer, "{message}")?;
+        Ok(())
     }
 
     pub(crate) fn write(&mut self, message: &str) -> anyhow::Result<()> {
