@@ -48,6 +48,26 @@ pub struct Verbosity {
 
 const PROGRESS_PREFIX_WIDTH: usize = 0;
 
+#[derive(Debug, Clone)]
+struct Secrets {
+    secrets: Vec<Arc<str>>,
+    redacted: Arc<str>,
+}
+
+impl Secrets {
+    fn redact(&self, text: Arc<str>) -> Arc<str> {
+        if self.secrets.is_empty() {
+            text
+        } else {
+            let mut result = text.to_string();
+            for secret in &self.secrets {
+                result = result.replace(secret.as_ref(), self.redacted.as_ref());
+            }
+            result.into()
+        }
+    }
+}
+
 fn is_verbosity_active(printer_level: Verbosity, verbosity: Level) -> bool {
     verbosity >= printer_level.level
 }
@@ -112,6 +132,7 @@ pub struct MultiProgressBar {
     progress: Option<indicatif::ProgressBar>,
     final_message: Option<Arc<str>>,
     is_increasing: bool,
+    secrets: Secrets,
 }
 
 impl MultiProgressBar {
@@ -259,7 +280,8 @@ impl MultiProgressBar {
         let child_process = self
             .start_process(command, &options)
             .context(format!("Failed to start process {command}"))?;
-        let result = monitor_process(command, child_process, self, &options)
+        let secrets = self.secrets.clone();
+        let result = monitor_process(command, child_process, self, &options, &secrets)
             .context(format!("Command `{command}` failed to execute"))?;
         Ok(result)
     }
@@ -345,6 +367,7 @@ impl<'a> MultiProgress<'a> {
             final_message: finish_message.map(|s| s.into()),
             is_increasing: true,
             start_time: self.printer.start_time,
+            secrets: self.printer.get_secrets(),
         }
     }
 }
@@ -486,6 +509,8 @@ impl<W: std::io::Write + indicatif::TermLike> PrinterTrait for W {}
 
 pub struct Printer {
     pub verbosity: Verbosity,
+    pub secrets: Vec<Arc<str>>,
+    pub redacted: Arc<str>,
     lock: Arc<Mutex<()>>,
     indent: usize,
     heading_count: usize,
@@ -520,6 +545,8 @@ impl Printer {
             writer: Box::new(console::Term::stdout()),
             create_progress_printer: || Box::new(console::Term::stdout()),
             start_time: std::time::Instant::now(),
+            secrets: Vec::new(),
+            redacted: "REDACTED".into(),
         }
     }
 
@@ -534,6 +561,8 @@ impl Printer {
             writer: Box::new(file_writer),
             create_progress_printer: || Box::new(null_term::NullTerm {}),
             start_time: std::time::Instant::now(),
+            secrets: Vec::new(),
+            redacted: "REDACTED".into(),
         })
     }
 
@@ -547,12 +576,15 @@ impl Printer {
             writer: Box::new(null_term::NullTerm {}),
             create_progress_printer: || Box::new(null_term::NullTerm {}),
             start_time: std::time::Instant::now(),
+            secrets: Vec::new(),
+            redacted: "REDACTED".into(),
         }
     }
 
     pub(crate) fn write(&mut self, message: &str) -> anyhow::Result<()> {
+        let redacted = self.get_secrets().redact(message.into());
         let _lock = self.lock.lock().unwrap();
-        write!(self.writer, "{message}")?;
+        write!(self.writer, "{redacted}")?;
         Ok(())
     }
 
@@ -630,6 +662,13 @@ impl Printer {
     pub fn code_block(&mut self, name: &str, content: &str) -> anyhow::Result<()> {
         self.write(format!("```{name}\n{content}```\n").as_str())?;
         Ok(())
+    }
+
+    fn get_secrets(&self) -> Secrets {
+        Secrets {
+            secrets: self.secrets.clone(),
+            redacted: self.redacted.clone(),
+        }
     }
 
     fn object<Type: Serialize>(&mut self, name: &str, value: &Type) -> anyhow::Result<()> {
@@ -752,8 +791,15 @@ impl Printer {
             .context(format!("Faild to execute process: {command}"))?;
         let mut multi_progress = MultiProgress::new(section.printer);
         let mut progress_bar = multi_progress.add_progress("progress", None, None);
-        let result = monitor_process(command, child_process, &mut progress_bar, &options)
-            .context(format!("Command `{command}` failed to execute"))?;
+        let secrets = multi_progress.printer.get_secrets();
+        let result = monitor_process(
+            command,
+            child_process,
+            &mut progress_bar,
+            &options,
+            &secrets,
+        )
+        .context(format!("Command `{command}` failed to execute"))?;
 
         Ok(result)
     }
@@ -792,6 +838,7 @@ fn monitor_process(
     mut child_process: std::process::Child,
     progress_bar: &mut MultiProgressBar,
     options: &ExecuteOptions,
+    secrets: &Secrets,
 ) -> anyhow::Result<Option<String>> {
     let start_time = std::time::Instant::now();
 
@@ -817,15 +864,16 @@ fn monitor_process(
      -> anyhow::Result<()> {
         let mut stdout = String::new();
         while let Ok(message) = stdout_rx.try_recv() {
+            let redacted = secrets.redact(message.into());
             if writer.is_some() || content.is_some() {
-                stdout.push_str(message.as_str());
+                stdout.push_str(redacted.as_ref());
                 stdout.push('\n');
             }
-            progress.set_message(message.as_str());
+            progress.set_message(redacted.as_ref());
             if let Some(level) = log_level_stdout.as_ref() {
                 progress.log(
                     *level,
-                    format_monitor_log_message(*level, "stdout", command, message.as_str())
+                    format_monitor_log_message(*level, "stdout", command, redacted.as_ref())
                         .as_str(),
                 );
             }
@@ -847,13 +895,14 @@ fn monitor_process(
      -> anyhow::Result<()> {
         let mut stderr = String::new();
         while let Ok(message) = stderr_rx.try_recv() {
-            stderr.push_str(message.as_str());
+            let redacted = secrets.redact(message.into());
+            stderr.push_str(redacted.as_ref());
             stderr.push('\n');
-            progress.set_message(message.as_str());
+            progress.set_message(redacted.as_ref());
             if let Some(level) = log_level_stderr.as_ref() {
                 progress.log(
                     *level,
-                    format_monitor_log_message(*level, "stdout", command, message.as_str())
+                    format_monitor_log_message(*level, "stdout", command, redacted.as_ref())
                         .as_str(),
                 );
             }
@@ -869,7 +918,8 @@ fn monitor_process(
     let mut stderr_content = String::new();
     let mut stdout_content = String::new();
 
-    let mut output_file = create_log_file(command, options).context("Failed to create log file")?;
+    let mut output_file =
+        create_log_file(command, options, secrets).context("Failed to create log file")?;
 
     let exit_status;
 
@@ -948,6 +998,7 @@ fn monitor_process(
 fn create_log_file(
     command: &str,
     options: &ExecuteOptions,
+    secrets: &Secrets,
 ) -> anyhow::Result<Option<std::fs::File>> {
     if let Some(log_path) = options.log_file_path.as_ref() {
         let mut file = std::fs::File::create(log_path.as_ref())
@@ -961,12 +1012,14 @@ fn create_log_file(
         let env_inherited = environment.get_mut(INHERITED).unwrap();
         if !options.clear_environment {
             for (key, value) in std::env::vars() {
-                env_inherited.insert(key.into(), value.into());
+                let redacted = secrets.redact(value.into());
+                env_inherited.insert(key.into(), redacted);
             }
         }
         let env_given = environment.get_mut(GIVEN).unwrap();
         for (key, value) in options.environment.iter() {
-            env_given.insert(key.clone(), value.clone());
+            let redacted = secrets.redact(value.clone());
+            env_given.insert(key.clone(), redacted);
         }
 
         let arguments = options.arguments.join(" ");
@@ -975,11 +1028,17 @@ fn create_log_file(
         let args = arguments_escaped.into_iter().collect::<String>();
         let shell = format!("{command} {args}").into();
 
+        let redacted_arguments = options
+            .arguments
+            .iter()
+            .map(|arg| secrets.redact(arg.clone()))
+            .collect();
+
         let log_header = LogHeader {
             command: command.into(),
             working_directory: options.working_directory.clone(),
             environment,
-            arguments: options.arguments.clone(),
+            arguments: redacted_arguments,
             shell,
         };
 
