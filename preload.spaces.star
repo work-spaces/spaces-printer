@@ -7,7 +7,7 @@ if not workspace.is_env_var_set("SPACES_PRINTER_SKIP_SDK_CHECKOUT"):
         rule = {"name": "@star/sdk"},
         repo = {
             "url": "https://github.com/work-spaces/sdk",
-            "rev": "v0.3.14",
+            "rev": "v0.3.22",
             "checkout": "Revision",
             "clone": "Default",
         },
@@ -17,7 +17,7 @@ if not workspace.is_env_var_set("SPACES_PRINTER_SKIP_SDK_CHECKOUT"):
         rule = {"name": "@star/packages"},
         repo = {
             "url": "https://github.com/work-spaces/packages",
-            "rev": "v0.2.22",
+            "rev": "v0.2.34",
             "checkout": "Revision",
             "clone": "Default",
         },
