@@ -37,7 +37,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Install Spaces CLI
-        uses: work-spaces/install-spaces@v0.15.5
+        uses: work-spaces/install-spaces@v0.15.22
 
       - name: Spaces Checkout
         run: spaces --ci checkout-repo --url=https://github.com/work-spaces/printer-rs --rev=${{ github.head_ref }} --name=${{ github.head_ref }}
