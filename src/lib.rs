@@ -82,7 +82,7 @@ fn format_log(
 ) -> String {
     let timestamp: Arc<str> = if is_show_elapsed_time {
         let elapsed = std::time::Instant::now() - start_time;
-        format!("[{:.3}]  ", elapsed.as_secs_f64()).into()
+        format!("[{:.3}] ", elapsed.as_secs_f64()).into()
     } else {
         "".into()
     };
