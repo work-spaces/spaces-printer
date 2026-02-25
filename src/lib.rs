@@ -150,14 +150,13 @@ impl MultiProgressBar {
     }
 
     pub fn set_total(&mut self, total: u64) {
-        if let Some(progress) = self.progress.as_mut() {
-            if let Some(length) = progress.length() {
-                if length != total {
-                    let _lock = self.lock.lock().unwrap();
-                    progress.set_length(total);
-                    progress.set_position(0);
-                }
-            }
+        if let Some(progress) = self.progress.as_mut()
+            && let Some(length) = progress.length()
+            && length != total
+        {
+            let _lock = self.lock.lock().unwrap();
+            progress.set_length(total);
+            progress.set_position(0);
         }
     }
 
@@ -258,10 +257,10 @@ impl MultiProgressBar {
         command: &str,
         options: &ExecuteOptions,
     ) -> anyhow::Result<std::process::Child> {
-        if let Some(directory) = &options.working_directory {
-            if !std::path::Path::new(directory.as_ref()).exists() {
-                return Err(anyhow::anyhow!("Directory does not exist: {directory}"));
-            }
+        if let Some(directory) = &options.working_directory
+            && !std::path::Path::new(directory.as_ref()).exists()
+        {
+            return Err(anyhow::anyhow!("Directory does not exist: {directory}"));
         }
 
         let child_process = options
@@ -951,10 +950,10 @@ fn monitor_process(
         progress_bar.increment_with_overflow(1);
 
         let now = std::time::Instant::now();
-        if let Some(timeout) = options.timeout {
-            if now - start_time > timeout {
-                child_process.kill().context("Failed to kill process")?;
-            }
+        if let Some(timeout) = options.timeout
+            && now - start_time > timeout
+        {
+            child_process.kill().context("Failed to kill process")?;
         }
     }
 
@@ -975,21 +974,21 @@ fn monitor_process(
     handle_stderr(progress_bar, output_file.as_mut(), &mut stderr_content)
         .context("while handling stderr")?;
 
-    if let Some(exit_status) = exit_status {
-        if !exit_status.success() {
-            let stderr_message = if output_file.is_some() {
-                String::new()
-            } else {
-                format!(": {stderr_content}")
-            };
-            if let Some(code) = exit_status.code() {
-                let exit_message = format!("Command `{command}` failed with exit code: {code}");
-                return Err(anyhow::anyhow!("{exit_message}{stderr_message}"));
-            } else {
-                return Err(anyhow::anyhow!(
-                    "Command `{command}` failed with unknown exit code{stderr_message}"
-                ));
-            }
+    if let Some(exit_status) = exit_status
+        && !exit_status.success()
+    {
+        let stderr_message = if output_file.is_some() {
+            String::new()
+        } else {
+            format!(": {stderr_content}")
+        };
+        if let Some(code) = exit_status.code() {
+            let exit_message = format!("Command `{command}` failed with exit code: {code}");
+            return Err(anyhow::anyhow!("{exit_message}{stderr_message}"));
+        } else {
+            return Err(anyhow::anyhow!(
+                "Command `{command}` failed with unknown exit code{stderr_message}"
+            ));
         }
     }
 
