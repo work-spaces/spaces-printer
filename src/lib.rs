@@ -494,7 +494,7 @@ impl Printer {
             create_progress_printer: || Box::new(console::Term::stdout()),
             start_time: std::time::Instant::now(),
             secrets: Vec::new(),
-            redacted: "REDACTED".into(),
+            redacted: "<REDACTED>".into(),
             max_redactions: DEFAULT_MAX_REDACTIONS,
             min_secret_length: DEFAULT_MIN_SECRET_LENGTH,
         }
@@ -512,7 +512,7 @@ impl Printer {
             create_progress_printer: || Box::new(null_term::NullTerm {}),
             start_time: std::time::Instant::now(),
             secrets: Vec::new(),
-            redacted: "REDACTED".into(),
+            redacted: "<REDACTED>".into(),
             max_redactions: DEFAULT_MAX_REDACTIONS,
             min_secret_length: DEFAULT_MIN_SECRET_LENGTH,
         })
@@ -529,7 +529,7 @@ impl Printer {
             create_progress_printer: || Box::new(null_term::NullTerm {}),
             start_time: std::time::Instant::now(),
             secrets: Vec::new(),
-            redacted: "REDACTED".into(),
+            redacted: "<REDACTED>".into(),
             max_redactions: DEFAULT_MAX_REDACTIONS,
             min_secret_length: DEFAULT_MIN_SECRET_LENGTH,
         }
