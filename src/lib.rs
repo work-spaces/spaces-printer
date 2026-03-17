@@ -14,7 +14,7 @@ pub mod markdown;
 mod null_term;
 mod secrets;
 mod util;
-pub use secrets::Secrets;
+pub use secrets::{DEFAULT_MAX_REDACTIONS, DEFAULT_MIN_SECRET_LENGTH, Secrets};
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Display, Default, Serialize, Deserialize,
@@ -457,6 +457,8 @@ pub struct Printer {
     pub verbosity: Verbosity,
     pub secrets: Vec<Arc<str>>,
     pub redacted: Arc<str>,
+    pub max_redactions: usize,
+    pub min_secret_length: usize,
     lock: Arc<Mutex<()>>,
     indent: usize,
     heading_count: usize,
@@ -493,6 +495,8 @@ impl Printer {
             start_time: std::time::Instant::now(),
             secrets: Vec::new(),
             redacted: "REDACTED".into(),
+            max_redactions: DEFAULT_MAX_REDACTIONS,
+            min_secret_length: DEFAULT_MIN_SECRET_LENGTH,
         }
     }
 
@@ -509,6 +513,8 @@ impl Printer {
             start_time: std::time::Instant::now(),
             secrets: Vec::new(),
             redacted: "REDACTED".into(),
+            max_redactions: DEFAULT_MAX_REDACTIONS,
+            min_secret_length: DEFAULT_MIN_SECRET_LENGTH,
         })
     }
 
@@ -524,6 +530,8 @@ impl Printer {
             start_time: std::time::Instant::now(),
             secrets: Vec::new(),
             redacted: "REDACTED".into(),
+            max_redactions: DEFAULT_MAX_REDACTIONS,
+            min_secret_length: DEFAULT_MIN_SECRET_LENGTH,
         }
     }
 
@@ -620,6 +628,8 @@ impl Printer {
         Secrets {
             secrets: self.secrets.clone(),
             redacted: self.redacted.clone(),
+            max_redactions: self.max_redactions,
+            min_secret_length: self.min_secret_length,
         }
     }
 
